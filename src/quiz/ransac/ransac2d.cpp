@@ -214,7 +214,7 @@ int main() {
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = CreateData3D();
 
   // std::unordered_set<int> inliers = Ransac(cloud, 20, 0.75f);
-  std::unordered_set<int> inliers = RansacPlane(cloud, 20, 0.3f);
+  std::unordered_set<int> inliers = RansacPlane(cloud, 10, 0.3f);
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloudInliers(
       new pcl::PointCloud<pcl::PointXYZ>());
