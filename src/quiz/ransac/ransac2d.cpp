@@ -49,7 +49,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr CreateData3D() {
 
 pcl::visualization::PCLVisualizer::Ptr initScene() {
   pcl::visualization::PCLVisualizer::Ptr viewer(
-      new pcl::visualization::PCLVisualizer("2D Viewer"));
+      new pcl::visualization::PCLVisualizer("3D Viewer"));
   viewer->setBackgroundColor(0, 0, 0);
   viewer->initCameraParameters();
   viewer->setCameraPosition(0, 0, 15, 0, 1, 0);
@@ -76,35 +76,35 @@ std::unordered_set<int> Ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
   float distanceToLine = 0.0f;
 
   for (int iter = 0; iter < maxIterations; ++iter) {
-    Line currentLine;
+    Line currentPlane;
 
-    currentLine.pointIdx1 = rand() % (pointsCount - 1);
-    currentLine.pointIdx2 = rand() % (pointsCount - 1);
-    while (currentLine.pointIdx1 == currentLine.pointIdx2) {
-      currentLine.pointIdx2 = rand() % (pointsCount - 1);
+    currentPlane.pointIdx1 = rand() % (pointsCount - 1);
+    currentPlane.pointIdx2 = rand() % (pointsCount - 1);
+    while (currentPlane.pointIdx1 == currentPlane.pointIdx2) {
+      currentPlane.pointIdx2 = rand() % (pointsCount - 1);
     }
 
-    pcl::PointXYZ point1 = cloud->points[currentLine.pointIdx1];
-    pcl::PointXYZ point2 = cloud->points[currentLine.pointIdx2];
+    pcl::PointXYZ point1 = cloud->points[currentPlane.pointIdx1];
+    pcl::PointXYZ point2 = cloud->points[currentPlane.pointIdx2];
 
-    currentLine.A = point1.y - point2.y;
-    currentLine.B = point2.x - point1.x;
-    currentLine.C = (point1.x * point2.y) - (point2.x * point1.y);
+    currentPlane.A = point1.y - point2.y;
+    currentPlane.B = point2.x - point1.x;
+    currentPlane.C = (point1.x * point2.y) - (point2.x * point1.y);
 
     for (int index = 0; index < cloud->points.size(); ++index) {
       pcl::PointXYZ point = cloud->points[index];
-      distanceToLine =
-          abs(currentLine.A * point.x + currentLine.B * point.y +
-              currentLine.C) /
-          sqrt(currentLine.A * currentLine.A + currentLine.B * currentLine.B);
+      distanceToLine = abs(currentPlane.A * point.x + currentPlane.B * point.y +
+                           currentPlane.C) /
+                       sqrt(currentPlane.A * currentPlane.A +
+                            currentPlane.B * currentPlane.B);
       if (distanceToLine <= distanceTol) {
-        ++currentLine.inlierCount;
+        ++currentPlane.inlierCount;
       }
     }
 
-    if (currentLine.inlierCount > maxInlierCount) {
-      maxInlierCount = currentLine.inlierCount;
-      bestLine = currentLine;
+    if (currentPlane.inlierCount > maxInlierCount) {
+      maxInlierCount = currentPlane.inlierCount;
+      bestLine = currentPlane;
     }
 
     distanceToLine = 0.0f;
@@ -123,14 +123,98 @@ std::unordered_set<int> Ransac(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
   return inliersResult;
 }
 
+std::unordered_set<int> RansacPlane(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
+                                    int maxIterations, float distanceTol) {
+  std::unordered_set<int> inliersResult;
+  srand(time(NULL));
+
+  struct Plane {
+    int pointIdx1, pointIdx2, pointIdx3;
+    float A, B, C, D;  // Plane model is Ax + By + Cz + D = 0
+    int inlierCount = 0;
+  };
+
+  int maxInlierCount = 0;
+
+  Plane bestPlane;
+  int pointsCount = cloud->points.size();
+
+  float distanceToPlane = 0.0f;
+
+  for (int iter = 0; iter < maxIterations; ++iter) {
+    Plane currentPlane;
+
+    currentPlane.pointIdx1 = rand() % (pointsCount - 1);
+    currentPlane.pointIdx2 = rand() % (pointsCount - 1);
+    while (currentPlane.pointIdx2 == currentPlane.pointIdx1) {
+      currentPlane.pointIdx2 = rand() % (pointsCount - 1);
+    }
+    currentPlane.pointIdx3 = rand() % (pointsCount - 1);
+    while (currentPlane.pointIdx3 == currentPlane.pointIdx1 ||
+           currentPlane.pointIdx3 == currentPlane.pointIdx2) {
+      currentPlane.pointIdx3 = rand() % (pointsCount - 1);
+    }
+
+    pcl::PointXYZ point1 = cloud->points[currentPlane.pointIdx1];
+    pcl::PointXYZ point2 = cloud->points[currentPlane.pointIdx2];
+    pcl::PointXYZ point3 = cloud->points[currentPlane.pointIdx3];
+
+    currentPlane.A = (point2.y - point1.y) * (point3.z - point1.z) -
+                     (point2.z - point1.z) * (point3.y - point1.y);
+    currentPlane.B = (point2.z - point1.z) * (point3.x - point1.x) -
+                     (point2.x - point1.x) * (point3.z - point1.z);
+    currentPlane.C = (point2.x - point1.x) * (point3.y - point1.y) -
+                     (point2.y - point1.y) * (point3.x - point1.x);
+    currentPlane.D =
+        -1 * (currentPlane.A * point1.x + currentPlane.B * point1.y +
+              currentPlane.C * point1.z);
+
+    for (int index = 0; index < cloud->points.size(); ++index) {
+      pcl::PointXYZ point = cloud->points[index];
+      distanceToPlane =
+          abs(currentPlane.A * point.x + currentPlane.B * point.y +
+              currentPlane.C * point.z + currentPlane.D) /
+          sqrt(currentPlane.A * currentPlane.A +
+               currentPlane.B * currentPlane.B +
+               currentPlane.C * currentPlane.C);
+      if (distanceToPlane <= distanceTol) {
+        ++currentPlane.inlierCount;
+      }
+    }
+
+    if (currentPlane.inlierCount > maxInlierCount) {
+      maxInlierCount = currentPlane.inlierCount;
+      bestPlane = currentPlane;
+    }
+
+    distanceToPlane = 0.0f;
+  }
+
+  for (int index = 0; index < cloud->points.size(); ++index) {
+    pcl::PointXYZ point = cloud->points[index];
+    distanceToPlane =
+        abs(bestPlane.A * point.x + bestPlane.B * point.y +
+            bestPlane.C * point.z + bestPlane.D) /
+        sqrt(bestPlane.A * bestPlane.A + bestPlane.B * bestPlane.B +
+             bestPlane.C * bestPlane.C);
+    if (distanceToPlane <= distanceTol) {
+      inliersResult.emplace(index);
+    }
+  }
+
+  return inliersResult;
+}
+
 int main() {
   // Create viewer
   pcl::visualization::PCLVisualizer::Ptr viewer = initScene();
 
   // Create data
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = CreateData();
+  // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = CreateData();
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = CreateData3D();
 
-  std::unordered_set<int> inliers = Ransac(cloud, 20, 0.75f);
+  // std::unordered_set<int> inliers = Ransac(cloud, 20, 0.75f);
+  std::unordered_set<int> inliers = RansacPlane(cloud, 20, 0.3f);
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloudInliers(
       new pcl::PointCloud<pcl::PointXYZ>());
